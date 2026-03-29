@@ -37,7 +37,7 @@ SYSTEM_PROMPT = """
 구하려고 벌이는 착각입니다... (이하 생략)
 """
 
-# 사용자별 대화 세션 저장 (기억력 유지)
+# 사용자별 대화 세션 저장 (기억력 유지용)
 user_chats = {}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -47,19 +47,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
-        # 가장 안정적인 모델 호출 방식 (경로 자동 할당)
+        # [핵심] 404 에러 방지용 최적화 호출 방식
+        # 특정 버전에 의존하지 않고 가장 기본 모델명을 직접 할당합니다.
         model = genai.GenerativeModel(
-            model_name="gemini-1.5-flash",
+            "gemini-1.5-flash",
             system_instruction=SYSTEM_PROMPT
         )
         
-        # 세션 기억력 유지
+        # 기억력을 위한 세션 유지
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
         
         chat = user_chats[user_id]
         
-        # 파트너님의 입력 전송
+        # 파트너님의 메시지 전송 및 응답 생성
         response = chat.send_message(
             update.message.text, 
             generation_config={"temperature": 0.8}
@@ -68,20 +69,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("생성에 실패했습니다. 다시 시도해 주세요.")
+            await update.message.reply_text("내용 생성에 실패했습니다. 다시 시도해 주세요.")
             
     except Exception as e:
-        print(f"Error: {e}")
-        # 세션 초기화
+        # 에러 발생 시 세션 초기화 및 로그 출력
+        print(f"Error for user {user_id}: {e}")
         if user_id in user_chats:
             del user_chats[user_id]
-        await update.message.reply_text(f"에러 발생: {str(e)}")
+        
+        # 404 등 구체적인 에러 상황을 파악하기 위해 에러 내용을 짧게 노출합니다.
+        error_msg = str(e)
+        if "404" in error_msg:
+            await update.message.reply_text(f"서버에서 모델을 찾지 못했습니다(404).\nAPI 설정을 다시 확인해야 할 것 같습니다.")
+        else:
+            await update.message.reply_text(f"처리 중 오류가 발생했습니다.\n({error_msg[:100]})")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("파트너님, 이번엔 진짜 순정으로 밀어붙입니다!")
+    print("파트너님, 마지막 404 박멸용 순정 코드 가동 중!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':

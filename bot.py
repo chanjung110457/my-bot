@@ -8,7 +8,7 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# 2. 파트너 전용 지침 (유연한 제목 + 장르 무제한 + 제목 고정)
+# 2. 파트너님 순정 지침 (절대 수정 금지)
 SYSTEM_PROMPT = """
 당신은 X(트위터)에서 조회수 수백만을 찍는 '지식 큐레이터'입니다. 
 당신은 백과사전이 아닙니다. 사람을 홀리는 '글쟁이'입니다.
@@ -37,7 +37,7 @@ SYSTEM_PROMPT = """
 구하려고 벌이는 착각입니다... (이하 생략)
 """
 
-# 사용자별 대화 세션을 저장할 딕셔너리 (기억력 핵심)
+# 사용자별 대화 세션 저장 (기억력 유지)
 user_chats = {}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -47,17 +47,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
-        # 모델을 1.5-flash로 강제 고정하여 2.5 모델의 좁은 한도(20회)를 피합니다.
-        model_name = "gemini-1.5-flash"
-        model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT)
+        # 모델명을 파트너님이 쓰시던 순정 방식으로 고정 (404/429 방어)
+        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
         
-        # 파트너님별로 대화 흐름(기억)을 유지하도록 세션 연결
+        # 기억력 유지를 위한 세션 연결
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
         
         chat = user_chats[user_id]
         
-        # 파트너님의 입력을 받아서 처리 (기억 유지하며 전송)
         response = chat.send_message(
             update.message.text, 
             generation_config={"temperature": 0.8}
@@ -66,20 +64,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("봇이 답변을 생성하지 못했습니다. 잠시 후 다시 시도해주세요.")
-        
+            await update.message.reply_text("생성에 실패했습니다. 다시 시도해 주세요.")
+            
     except Exception as e:
-        # 에러 발생 시 해당 세션 초기화하여 봇이 멈추지 않게 방어
-        print(f"Error for user {user_id}: {e}")
+        # 에러 발생 시 로그 출력 및 세션 초기화
+        print(f"Error: {e}")
         if user_id in user_chats:
             del user_chats[user_id]
-        await update.message.reply_text(f"현재 요청이 많습니다. 잠시 후 다시 입력해주세요!\n(에러: {str(e)})")
+        await update.message.reply_text(f"에러가 발생했습니다. 잠시 후 다시 시도해 주세요.\n({str(e)})")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("파트너님, 모델 1.5 고정 및 낚시 모드 가동되었습니다!")
+    print("파트너님, 요청하신 지침으로 완벽 복구 완료!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':

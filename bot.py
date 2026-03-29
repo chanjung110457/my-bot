@@ -37,20 +37,8 @@ SYSTEM_PROMPT = """
 구하려고 벌이는 착각입니다... (이하 생략)
 """
 
-# 사용자별 대화 세션 저장
+# 사용자별 대화 세션 저장 (기억력 유지)
 user_chats = {}
-
-def get_actual_model_name():
-    """서버에서 사용 가능한 1.5-flash 모델명을 직접 찾아냅니다."""
-    try:
-        for m in genai.list_models():
-            # 모델 이름에 1.5-flash가 포함되어 있고 콘텐츠 생성이 가능한 모델 탐색
-            if 'gemini-1.5-flash' in m.name and 'generateContent' in m.supported_generation_methods:
-                return m.name
-    except Exception as e:
-        print(f"Model list error: {e}")
-    # 실패 시 기본값 (경로 포함)
-    return "models/gemini-1.5-flash"
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -59,15 +47,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
-        # 시스템이 허용하는 모델명을 직접 가져와서 404를 원천 차단합니다.
-        model_name = get_actual_model_name()
-        model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT)
+        # 가장 안정적인 모델 호출 방식 (경로 자동 할당)
+        model = genai.GenerativeModel(
+            model_name="gemini-1.5-flash",
+            system_instruction=SYSTEM_PROMPT
+        )
         
+        # 세션 기억력 유지
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
         
         chat = user_chats[user_id]
         
+        # 파트너님의 입력 전송
         response = chat.send_message(
             update.message.text, 
             generation_config={"temperature": 0.8}
@@ -76,19 +68,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("생성된 내용이 없습니다. 다시 시도해 주세요.")
+            await update.message.reply_text("생성에 실패했습니다. 다시 시도해 주세요.")
             
     except Exception as e:
-        print(f"Error for user {user_id}: {e}")
+        print(f"Error: {e}")
+        # 세션 초기화
         if user_id in user_chats:
             del user_chats[user_id]
-        await update.message.reply_text(f"에러가 발생했습니다. 잠시 후 다시 시도해 주세요.\n({str(e)})")
+        await update.message.reply_text(f"에러 발생: {str(e)}")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("파트너님, 모델 자동 탐색으로 404 정면 돌파 시작!")
+    print("파트너님, 이번엔 진짜 순정으로 밀어붙입니다!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':

@@ -45,4 +45,26 @@ model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     try:
-        # 매번 독립
+        # 매번 독립적으로 생성하여 서버 부하 및 세션 꼬임 방지 (Railway 최적화)
+        response = model.generate_content(
+            update.message.text,
+            generation_config={"temperature": 0.8}
+        )
+        
+        if response.text:
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text("잠시 오류가 있었습니다. 다시 보내주세요!")
+            
+    except Exception as e:
+        print(f"Error: {e}")
+        await update.message.reply_text("봇이 다시 가동 중입니다. 한 번 더 입력해주세요!")
+
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    print("가동 시작...")
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == '__main__':
+    main()

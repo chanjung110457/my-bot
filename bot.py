@@ -8,14 +8,18 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY")
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# 2. 파트너 전용 지침 (기억력 + 본문 예시 + 번호 인식)
+# 2. 파트너 전용 지침 (X 수익화 최적화 로직)
 SYSTEM_PROMPT = """
-당신은 X(트위터) '지식 브런치' 작가입니다. 당신은 백과사전이 아닙니다. 사람을 홀리는 '글쟁이'입니다.
+당신은 X(트위터)에서 가장 핫한 '지식 브런치' 작가입니다. 
+당신은 백과사전이 아닙니다. 사람을 홀리는 '글쟁이'입니다.
 
-[절대 규칙]
-1. 번호 인식: 사용자가 번호(예: 7번)를 말하면, 반드시 이전 대화에서 당신이 준 리스트의 해당 제목을 주제로 본문을 작성하세요.
-2. 본문 양식: 제목 한 줄 -> 빈 줄 2개 -> 20자 내외 개행 본문 (문장 사이 빈 줄 1개).
-3. 말투: 설명충 금지. 자극적이고 유머러스한 팩트 중심. 인사말이나 사설 절대 금지.
+[무조건 지켜야 할 철칙]
+1. 제목: 무조건 한 줄. (## 금지, 특수문자 금지)
+2. 여백: 제목 쓰고 엔터 두 번(빈 줄 2개) 무조건 넣으세요.
+3. 본문 개행: 한 문장이 15~20자 사이면 무조건 엔터 치세요. (모바일 최적화)
+4. 본문 간격: 문장과 문장 사이는 무조건 한 줄 띄우세요.
+5. 말투: "데자뷔 현상은~" 같은 설명충 말투 쓰면 즉시 해고입니다. 
+   (예시: "우리 뇌가 당신을 살리려고 댄스를 추는 셈입니다.")
 
 [본문 예시 - 이 느낌 그대로 쓰세요]
 왜 자다가 낭떠러지에서 떨어질까요?
@@ -37,42 +41,39 @@ SYSTEM_PROMPT = """
 강력한 전기 신호를 
 
 순식간에 쏴버리는 겁니다
+
+# SYSTEM_PROMPT 내 본문 작성 지침에 추가
+"사용자가 번호를 말하면, 반드시 리스트에 있는 해당 번호의 '제목 내용'을 주제로 잡으세요. 숫자 자체에 대해 쓰지 마세요."
+
 """
 
-model = genai.GenerativeModel(model_name="gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
-
-# 서버가 재시작되어도 파트너님과의 대화를 기억하기 위한 세션 관리
-sessions = {}
+def get_working_model():
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                return m.name
+    except:
+        pass
+    return "gemini-1.5-flash"
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-    
     try:
-        # 사용자별 대화 세션 유지 (기억력의 핵심)
-        if user_id not in sessions:
-            sessions[user_id] = model.start_chat(history=[])
+        model_name = get_working_model()
+        model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT, generation_config={"temperature": 0.8})
         
-        chat = sessions[user_id]
-        response = chat.send_message(update.message.text, generation_config={"temperature": 0.8})
+        # 파트너님의 입력을 받아서 처리
+        response = model.generate_content(update.message.text)
+        await update.message.reply_text(response.text)
         
-        if response.text:
-            await update.message.reply_text(response.text)
-        else:
-            await update.message.reply_text("내용을 생성하지 못했습니다. 다시 시도해주세요!")
-            
     except Exception as e:
-        # 에러 발생 시 세션 초기화 후 재시도
-        if user_id in sessions:
-            del sessions[user_id]
-        print(f"Error: {e}")
-        await update.message.reply_text("봇이 다시 가동 중입니다. 한 번 더 입력해주세요!")
+        await update.message.reply_text(f"에러 발생: {str(e)}")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("파트너님, 기억력 복구 완료! Railway 배포 확인하세요.")
-    app.run_polling(drop_pending_updates=True)
+    print("파트너님, 봇이 가동되었습니다. 텔레그램에서 '주제 뽑아줘'를 입력하세요!")
+    app.run_polling()
 
 if __name__ == '__main__':
     main()

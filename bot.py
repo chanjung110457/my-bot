@@ -56,10 +56,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     try:
         model_name = get_working_model()
-        model = genai.GenerativeModel(
-            model_name,
-            system_instruction=SYSTEM_PROMPT # 여기에 지침을 박았습니다.
-        )
+        model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT, generation_config={"temperature": 0.8})
         
         # 파트너님의 입력을 받아서 처리
         response = model.generate_content(update.message.text)

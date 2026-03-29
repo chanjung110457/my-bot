@@ -47,10 +47,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
-        # 모델명을 파트너님이 쓰시던 순정 방식으로 고정 (404/429 방어)
-        model = genai.GenerativeModel("gemini-1.5-flash", system_instruction=SYSTEM_PROMPT)
+        # 404 에러를 피하기 위해 가장 표준적인 최신 모델명 형식을 사용합니다.
+        model_name = "gemini-1.5-flash-latest"
+        model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT)
         
-        # 기억력 유지를 위한 세션 연결
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
         
@@ -64,20 +64,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if response.text:
             await update.message.reply_text(response.text)
         else:
-            await update.message.reply_text("생성에 실패했습니다. 다시 시도해 주세요.")
+            await update.message.reply_text("봇이 답변을 생성하지 못했습니다. 다시 시도해 주세요.")
             
     except Exception as e:
-        # 에러 발생 시 로그 출력 및 세션 초기화
-        print(f"Error: {e}")
+        print(f"Error for user {user_id}: {e}")
+        # 세션 초기화
         if user_id in user_chats:
             del user_chats[user_id]
-        await update.message.reply_text(f"에러가 발생했습니다. 잠시 후 다시 시도해 주세요.\n({str(e)})")
+        await update.message.reply_text(f"에러가 발생했습니다. 잠시 후 다시 시도해 주세요.\n(에러: {str(e)})")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("파트너님, 요청하신 지침으로 완벽 복구 완료!")
+    print("파트너님, 모델명 'latest' 버전으로 긴급 교체 완료!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':

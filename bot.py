@@ -19,25 +19,15 @@ SYSTEM_PROMPT = """
    - 팩트 폭격형 예시: "문어의 다리가 많은 진짜 이유", "우주에서 소리 지르면 생기는 일"
    - 호기심 자극형 예시: "당신이 몰랐던 바퀴벌레의 비밀", "죽기 직전 뇌에서 일어나는 일"
 
-2. 장르 믹스: 아래 카테고리를 골고루 섞어 10개를 뽑으세요.
-   - 미스터리/공포, 우주/심해, 동물/인체, 일상/공감 등
+2. 장르 믹스: 아래 카테고리를 골고루 섞어 10개를 뽑으세요. (미스터리/공포, 우주/심해, 동물/인체, 일상/공감 등)
 
 [본문 작성 철칙]
-1. 제목 고정: 사용자가 번호를 말하면, 반드시 리스트에 있는 해당 번호의 제목을 '토씨 하나' 틀리지 말고 그대로 제목으로 쓰세요. (임의 수정 금지)
+1. 제목 고정: 사용자가 번호를 말하면, 반드시 '직전 대화'의 리스트에 있는 해당 번호의 제목을 '토씨 하나' 틀리지 말고 그대로 제목으로 쓰세요. (임의 수정 절대 금지)
 2. 양식: 제목 1줄 -> 빈 줄 2개 -> 20자 내외 개행 본문 (문장 사이 빈 줄 1개).
-3. 말투: 설명충 금지. 자극적이고 유머러스한 팩트 중심. (인사말 절대 금지)
-
-[본문 예시]
-왜 자다가 낭떠러지에서 떨어질까요?
-
-
-평온하게 잠들려던 순간 
-몸이 움찔하며 깨셨나요?
-
-우리 뇌가 당신의 목숨을 
-구하려고 벌이는 착각입니다... (이하 생략)
+3. 말투: 설명충 금지. 자극적이고 유머러스한 팩트 중심. (인사말/서론 절대 금지)
 """
 
+# 사용자별 대화 세션을 담을 메모리 (Railway 재시작 전까지 유지)
 user_chats = {}
 
 def get_working_model():
@@ -50,29 +40,45 @@ def get_working_model():
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    if not update.message or not update.message.text: return
+    
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     
     try:
         model_name = get_working_model()
         model = genai.GenerativeModel(model_name, system_instruction=SYSTEM_PROMPT)
         
-        # 기억력(세션) 유지
+        # 세션이 없으면 새로 생성, 있으면 기존 세션(기억) 사용
         if user_id not in user_chats:
             user_chats[user_id] = model.start_chat(history=[])
         
         chat = user_chats[user_id]
-        response = chat.send_message(update.message.text, generation_config={"temperature": 0.8})
-        await update.message.reply_text(response.text)
         
+        # 파트너님의 입력을 모델에게 전달 (이전 리스트 내용을 기억한 상태로 답변)
+        response = chat.send_message(
+            update.message.text, 
+            generation_config={"temperature": 0.8}
+        )
+        
+        if response.text:
+            await update.message.reply_text(response.text)
+        else:
+            await update.message.reply_text("봇이 답변을 생성하지 못했습니다. 다시 시도해 주세요.")
+            
     except Exception as e:
-        if user_id in user_chats: del user_chats[user_id]
-        print(f"Error: {e}")
+        # 오류 발생 시 세션 리셋 후 로그 출력
+        print(f"Error for user {user_id}: {e}")
+        if user_id in user_chats:
+            del user_chats[user_id]
         await update.message.reply_text("봇이 다시 가동 중입니다. 한 번 더 입력해주세요!")
 
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+    # 텍스트 메시지 처리 핸들러
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("파트너님, 적재적소 낚시 모드 가동 중!")
+    
+    print("파트너님, 기억력 보강 완료! 적재적소 낚시 모드 가동 중!")
+    # 이전 밀린 메시지 무시하고 실행
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == '__main__':
